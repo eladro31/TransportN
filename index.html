@@ -60,6 +60,13 @@
 
         .section-title { font-size: 1rem; font-weight: bold; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 1px; }
         .section-title::after { content: ''; flex-grow: 1; height: 1px; background: #1e293b; }
+
+        /* Listas Admin */
+        .admin-list-container { max-height: 180px; overflow-y: auto; background: #0b0f19; padding: 10px; border-radius: 6px; border: 1px solid #1e293b; margin-top: 10px; }
+        .admin-list-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #1e293b; font-size: 0.8rem; }
+        .admin-list-item:last-child { border-bottom: none; }
+        .btn-delete-mini { background: var(--rojo); color: white; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: bold; }
+        .btn-delete-mini:hover { background: #cc0000; }
     </style>
 </head>
 <body onload="conectarPlataforma()">
@@ -81,7 +88,7 @@
             </div>
             <div id="nexus-user-info" class="user-logged-info">
                 <span id="user-display-email">---</span>
-                <span id="user-display-balance" style="color:var(--oro); font-weight:bold;">$0.00 UQT</span>
+                <span id="user-display-balance" style="color:var(--oro); font-weight:bold;">$0.00 R$</span>
                 <button onclick="cerrarSesionNexus()" style="background: var(--rojo); border:none; padding: 3px 6px; font-size:0.7rem; border-radius:4px; color:white;">Salir</button>
             </div>
         </div>
@@ -93,11 +100,15 @@
             <div class="search-grid">
                 <div>
                     <label>Origen</label>
-                    <input type="text" id="search-origen" placeholder="Ej: Retiro, Buenos Aires">
+                    <select id="search-origen">
+                        <option value="">Cargando terminales...</option>
+                    </select>
                 </div>
                 <div>
                     <label>Destino</label>
-                    <input type="text" id="search-destino" placeholder="Ej: San Miguel">
+                    <select id="search-destino">
+                        <option value="">Cargando terminales...</option>
+                    </select>
                 </div>
                 <div>
                     <label>Fecha de Viaje</label>
@@ -150,18 +161,27 @@
             </div>
 
             <div class="admin-section-box">
+                <div class="section-title" style="color:var(--nexus-cyan);">🏙️ Registrar Lista de Ciudades y Paradas</div>
+                <label>Nombre de la Ciudad:</label>
+                <input type="text" id="adm-parada-ciudad" placeholder="Ej: Brookhaven, Bloxburg, Retiro">
+                <label>Nombre de la Parada / Terminal Específica:</label>
+                <input type="text" id="adm-parada-nombre" placeholder="Ej: Terminal Central, Estación Norte">
+                <button class="btn-nexus" style="background: var(--nexus-azul); margin-top:10px;" onclick="registrarCiudadParada()">Guardar Ubicación Oficial</button>
+            </div>
+
+            <div class="admin-section-box">
                 <div class="section-title" style="color:var(--nexus-cyan);">🗺️ Programar Viaje / Tramo Comercial</div>
                 <label>Seleccionar Empresa Operadora:</label>
                 <select id="adm-viaje-empresa"></select>
                 
                 <div style="display:flex; gap:10px;">
                     <div style="flex:1;">
-                        <label>Origen:</label>
-                        <input type="text" id="adm-viaje-origen" placeholder="Retiro">
+                        <label>Origen Oficial:</label>
+                        <select id="adm-viaje-origen"></select>
                     </div>
                     <div style="flex:1;">
-                        <label>Destino:</label>
-                        <input type="text" id="adm-viaje-destino" placeholder="Mar del Plata">
+                        <label>Destino Oficial:</label>
+                        <select id="adm-viaje-destino"></select>
                     </div>
                 </div>
 
@@ -176,80 +196,123 @@
                     </div>
                 </div>
 
-                <label>Precio del Boleto ($ UQT / BancoGato):</label>
+                <label>Precio del Boleto (R$ / BancoGato):</label>
                 <input type="number" id="adm-viaje-precio" placeholder="2500">
 
                 <button class="btn-nexus" style="background:var(--verde); color:#000; margin-top:10px;" onclick="publicarViaje()">Habilitar Venta de Pasaje</button>
+            </div>
+
+            <div class="admin-section-box">
+                <div class="section-title" style="color:var(--rojo);">🗑️ Borrar Servicio / Cancelar Itinerario</div>
+                <p style="font-size:0.75rem; color:var(--gris-texto); margin: 0 0 10px 0;">Remueve de forma inmediata tramos publicados de la base de datos central:</p>
+                <div class="admin-list-container" id="admin-lista-borrar-viajes">
+                    <p style="color:var(--gris-texto); font-size:0.75rem; padding:10px;">Cargando itinerarios activos...</p>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Configuración centralizada de tu ecosistema Firebase
         const firebaseConfig = { apiKey: "AIzaSyA58MXpItx1F9zNnJbyeS_4FT_onYx9wig", authDomain: "uqt-virtual.firebaseapp.com", projectId: "uqt-virtual", storageBucket: "uqt-virtual.appspot.com", messagingSenderId: "777641217730", appId: "1:777641217730:web:8c5b5f9b4c7d8e2a" };
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
 
+        let usuarioActualUID = null;
         let usuarioActualEmail = null;
 
         function conectarPlataforma() {
-            // Monitorear Autenticación Global Nexus
+            // MONITOREO DE USUARIO SINCRO CON BANCOGATO (`usuarios_banco`)
             auth.onAuthStateChanged(user => {
                 const guestContainer = document.getElementById('nexus-auth-container');
                 const userContainer = document.getElementById('nexus-user-info');
                 if(user) {
+                    usuarioActualUID = user.uid;
                     usuarioActualEmail = user.email;
                     guestContainer.style.display = 'none';
                     userContainer.style.display = 'flex';
                     document.getElementById('user-display-email').innerText = user.email.split('@')[0].toUpperCase();
                     
-                    // Escuchar saldo en tiempo real desde base central de usuarios
-                    db.collection('usuarios').doc(user.email).onSnapshot(doc => {
+                    // SOLUCIÓN AL BUG DE COMPRAS: Leer directo de usuarios_banco por ID del Auth
+                    db.collection('usuarios_banco').doc(user.uid).onSnapshot(doc => {
                         if(doc.exists) {
-                            const saldo = doc.data().saldo_uqt || 0;
-                            document.getElementById('user-display-balance').innerText = `$${saldo.toLocaleString()} UQT`;
+                            const saldo = doc.data().saldo || 0;
+                            document.getElementById('user-display-balance').innerText = `R$ ${saldo.toLocaleString()}`;
+                        } else {
+                            document.getElementById('user-display-balance').innerText = `R$ 0.00`;
                         }
                     });
                 } else {
+                    usuarioActualUID = null;
                     usuarioActualEmail = null;
                     guestContainer.style.display = 'flex';
                     userContainer.style.display = 'none';
                 }
             });
 
-            // Sincronizar selectores de Empresas de TikTok en vivo
+            // ESCUCHA ACTIVA DE SELECTORES DE EMPRESAS
             db.collection('transportn_empresas').orderBy('nombre', 'asc').onSnapshot(snap => {
                 const searchSelect = document.getElementById('search-empresa');
                 const adminSelect = document.getElementById('adm-viaje-empresa');
-                
                 let options = '<option value="">Todas las empresas</option>';
                 let adminOptions = '';
-
                 snap.forEach(doc => {
                     const emp = doc.data();
                     options += `<option value="${emp.nombre}">${emp.nombre} ${emp.tiktok ? '('+emp.tiktok+')' : ''}</option>`;
                     adminOptions += `<option value="${emp.nombre}">${emp.nombre}</option>`;
                 });
-
                 searchSelect.innerHTML = options;
                 adminSelect.innerHTML = adminOptions;
             });
 
-            // Cargar grilla completa de viajes inicialmente
-            cargarViajesGubernamentales({}, (viajes) => { renderizarPasajesGrid(viajes); });
-        }
+            // ESCUCHA ACTIVA DE CIUDADES Y PARADAS (Evita nombres aleatorios)
+            db.collection('transportn_paradas').orderBy('ciudad', 'asc').onSnapshot(snap => {
+                const sOrigen = document.getElementById('search-origen');
+                const sDestino = document.getElementById('search-destino');
+                const aOrigen = document.getElementById('adm-viaje-origen');
+                const aDestino = document.getElementById('adm-viaje-destino');
 
-        function cargarViajesGubernamentales(filtros, callback) {
-            let query = db.collection('transportn_viajes');
-            query.onSnapshot(snap => {
-                let lista = [];
+                let searchOptions = '<option value="">-- Seleccionar Terminal --</option>';
+                let adminOptions = '';
+
+                snap.forEach(doc => {
+                    const p = doc.data();
+                    const stringCompleto = `${p.ciudad} [${p.parada}]`;
+                    searchOptions += `<option value="${stringCompleto}">${stringCompleto}</option>`;
+                    adminOptions += `<option value="${stringCompleto}">${stringCompleto}</option>`;
+                });
+
+                sOrigen.innerHTML = searchOptions;
+                sDestino.innerHTML = searchOptions;
+                aOrigen.innerHTML = adminOptions;
+                aDestino.innerHTML = adminOptions;
+            });
+
+            // ESCUCHA ACTIVA DE VIAJES / PANEL BORRAR VIAJES
+            db.collection('transportn_viajes').orderBy('fecha', 'asc').onSnapshot(snap => {
+                let listaViajes = [];
+                const panelBorrar = document.getElementById('admin-lista-borrar-viajes');
+                
+                if(snap.empty) {
+                    panelBorrar.innerHTML = `<p style="color:var(--gris-texto); font-size:0.75rem; padding:10px;">No existen itinerarios cargados.</p>`;
+                } else {
+                    panelBorrar.innerHTML = "";
+                }
+
                 snap.forEach(doc => {
                     let data = doc.data();
                     data.id = doc.id;
-                    lista.push(data);
+                    listaViajes.push(data);
+
+                    // Insertar en la lista del módulo Borrar Servicio del panel admin
+                    panelBorrar.innerHTML += `
+                        <div class="admin-list-item">
+                            <span><b>${data.empresa}</b>: ${data.origen.split(' [')[0]} ➔ ${data.destino.split(' [')[0]} (${data.fecha})</span>
+                            <button class="btn-delete-mini" onclick="borrarServicioViaje('${data.id}')">Borrar</button>
+                        </div>
+                    `;
                 });
-                callback(lista);
+                renderizarPasajesGrid(listaViajes);
             });
         }
 
@@ -269,7 +332,7 @@
                             <div class="ticket-meta">📅 Fecha: <b>${v.fecha}</b> | 🕒 Salida: <b>${v.hora} hs</b></div>
                         </div>
                         <div class="ticket-price-zone">
-                            <div class="ticket-price">$${v.precio} UQT</div>
+                            <div class="ticket-price">R$ ${parseFloat(v.precio).toLocaleString()}</div>
                             <button class="btn-nexus" style="padding: 6px 15px; font-size:0.75rem;" onclick="procesarCompraBoleto('${v.id}', ${v.precio}, '${v.origen}', '${v.destino}', '${v.empresa}')">Comprar Boleto</button>
                         </div>
                     </div>
@@ -278,8 +341,8 @@
         }
 
         function filtrarPasajes() {
-            const ori = document.getElementById('search-origen').value.trim().toLowerCase();
-            const dest = document.getElementById('search-destino').value.trim().toLowerCase();
+            const ori = document.getElementById('search-origen').value;
+            const dest = document.getElementById('search-destino').value;
             const fecha = document.getElementById('search-fecha').value;
             const emp = document.getElementById('search-empresa').value;
 
@@ -289,8 +352,8 @@
                     const v = doc.data();
                     v.id = doc.id;
 
-                    if(ori && !v.origen.toLowerCase().includes(ori)) return;
-                    if(dest && !v.destino.toLowerCase().includes(dest)) return;
+                    if(ori && v.origen !== ori) return;
+                    if(dest && v.destino !== dest) return;
                     if(fecha && v.fecha !== fecha) return;
                     if(emp && v.empresa !== emp) return;
 
@@ -300,30 +363,34 @@
             });
         }
 
+        // CONTROL DE COMPRAS CORREGIDO BAJO BANCOGATO
         async function procesarCompraBoleto(viajeId, precio, origen, destino, empresa) {
-            if(!usuarioActualEmail) {
+            if(!usuarioActualUID) {
                 return alert("Para adquirir pasajes debes iniciar sesión con tu Cuenta Nexus Global.");
             }
 
-            if(!confirm(`¿Confirmas la compra del boleto con la empresa ${empresa} por $${precio} UQT?`)) return;
+            if(!confirm(`¿Confirmas la compra del boleto con la empresa ${empresa} por R$ ${precio}?`)) return;
 
-            const userRef = db.collection('usuarios').doc(usuarioActualEmail);
+            const userRef = db.collection('usuarios_banco').doc(usuarioActualUID);
 
             try {
                 await db.runTransaction(async (transaction) => {
                     const userDoc = await transaction.get(userRef);
-                    if(!userDoc.exists) throw "El usuario de red no posee una cuenta activa.";
+                    if(!userDoc.exists) throw "Tu cuenta no está vinculada al sistema de BancoGato.";
 
-                    const saldoActual = userDoc.data().saldo_uqt || 0;
+                    const saldoActual = userDoc.data().saldo || 0;
                     if(saldoActual < precio) {
-                        throw "Fondos insuficientes en tu Cuenta Nexus. Realiza una recarga en BancoGato.";
+                        throw "Fondos insuficientes en tu Cuenta Nexus. Realiza una inyección en BancoGato.";
                     }
 
-                    transaction.update(userRef, { saldo_uqt: saldoActual - precio });
+                    // Descontar saldo con la variable unificada
+                    transaction.update(userRef, { saldo: saldoActual - precio });
 
+                    // Registrar boleto emitido
                     const boletoRef = db.collection('usuarios_boletos').doc();
                     transaction.set(boletoRef, {
-                        usuario: usuarioActualEmail,
+                        uid: usuarioActualUID,
+                        usuarioEmail: usuarioActualEmail,
                         viajeId: viajeId,
                         origen: origen,
                         destino: destino,
@@ -334,11 +401,35 @@
                     });
                 });
 
-                alert("¡Pasaje adquirido con éxito! Se ha verificado en red central.");
+                // Registrar el movimiento de salida para que se vea en el Historial de BancoGato
+                await db.collection('movimientos_banco').add({
+                    uid: usuarioActualUID,
+                    actividad: `Compra de Pasaje: A ${destino.split(' [')[0]}`,
+                    monto: precio,
+                    tipo: 'salida',
+                    fecha: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                alert("¡Pasaje adquirido con éxito! Boleto registrado y verificado en red.");
 
             } catch (err) {
                 alert("Operación cancelada: " + err);
             }
+        }
+
+        // PANEL ADMIN: ALTA CIUDAD Y PARADA
+        function registrarCiudadParada() {
+            const ciudad = document.getElementById('adm-parada-ciudad').value.trim();
+            const parada = document.getElementById('adm-parada-nombre').value.trim();
+
+            if(!ciudad || !parada) return alert("Complete los nombres de la Ciudad y su respectiva Parada.");
+
+            db.collection('transportn_paradas').add({ ciudad, parada })
+                .then(() => {
+                    alert(`Ubicación guardada: ${ciudad} - ${parada}`);
+                    document.getElementById('adm-parada-ciudad').value = "";
+                    document.getElementById('adm-parada-nombre').value = "";
+                }).catch(e => alert("Error al guardar: " + e));
         }
 
         function registrarEmpresaTikTok() {
@@ -357,8 +448,8 @@
 
         function publicarViaje() {
             const empresa = document.getElementById('adm-viaje-empresa').value;
-            const origen = document.getElementById('adm-viaje-origen').value.trim();
-            const destino = document.getElementById('adm-viaje-destino').value.trim();
+            const origen = document.getElementById('adm-viaje-origen').value;
+            const destino = document.getElementById('adm-viaje-destino').value;
             const fecha = document.getElementById('adm-viaje-fecha').value;
             const hora = document.getElementById('adm-viaje-hora').value;
             const precio = parseFloat(document.getElementById('adm-viaje-precio').value);
@@ -366,16 +457,25 @@
             if(!empresa || !origen || !destino || !fecha || !hora || isNaN(precio)) {
                 return alert("Complete todos los campos del tramo de viaje.");
             }
+            if(origen === destino) return alert("El Origen y el Destino no pueden ser idénticos.");
 
             db.collection('transportn_viajes').add({ empresa, origen, destino, fecha, hora, precio })
                 .then(() => {
                     alert("¡Ruta e itinerario publicados para la venta masiva!");
-                    document.getElementById('adm-viaje-origen').value = "";
-                    document.getElementById('adm-viaje-destino').value = "";
                     document.getElementById('adm-viaje-precio').value = "";
                 });
         }
 
+        // PANEL ADMIN: ELIMINAR SERVICIOS
+        function borrarServicioViaje(id) {
+            if(!confirm("¿Estás seguro de que deseas eliminar permanentemente este servicio de transporte?")) return;
+            db.collection('transportn_viajes').doc(id).delete()
+                .then(() => {
+                    alert("Servicio removido del servidor global de manera exitosa.");
+                }).catch(err => alert("Error al borrar: " + err));
+        }
+
+        // CONFIG DE AUTENTICACIÓN
         function abrirModalAuth(modo) {
             const modal = document.getElementById('modal-auth');
             const titulo = document.getElementById('auth-title');
@@ -402,21 +502,29 @@
             const email = document.getElementById('auth-email').value.trim();
             const pass = document.getElementById('auth-pass').value;
             if(!email || !pass) return alert("Complete los datos.");
-            auth.createUserWithEmailAndPassword(email, pass).then(async () => {
-                await db.collection('usuarios').doc(email).set({ email: email, saldo_uqt: 0, plan: "", fechaCreacion: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                alert("Cuenta Nexus creada globalmente.");
+            auth.createUserWithEmailAndPassword(email, pass).then(async (res) => {
+                // Sincronizar directo con esquema BancoGato
+                await db.collection('usuarios_banco').doc(res.user.uid).set({ 
+                    nombre: "Usuario", 
+                    apellido: "Nexus", 
+                    alias: email.split('@')[0], 
+                    email: email, 
+                    saldo: 0, 
+                    cardNum: "7777 " + Math.floor(1000+Math.random()*8999) + " " + Math.floor(1000+Math.random()*8999) + " " + Math.floor(1000+Math.random()*8999), 
+                    cvv: Math.floor(100 + Math.random()*899)
+                }, { merge: true });
+                alert("Cuenta Nexus creada e integrada con BancoGato.");
                 cerrarModalAuth();
             }).catch(err => alert("Error: " + err.message));
         }
 
         function cerrarSesionNexus() { auth.signOut(); }
 
-        // Acceso Especial Administrador con la clave solicitada
         function entrarModoAdmin() {
             const password = prompt("Código de Seguridad Comercial TransportN:");
             if(password === "UnionQuintanaTuri2012@_") {
                 document.getElementById('admin-portal').style.display = 'block';
-            } else {
+            } else if (password !== null) {
                 alert("Acceso denegado. Credenciales inválidas.");
             }
         }
