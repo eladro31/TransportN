@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TransportN | Transportes Nexus</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <style>
+        :root { --nexus-azul: #0052cc; --nexus-cyan: #00dfa2; --fondo: #07090e; --panel: #111622; --texto: #ffffff; --gris-texto: #a0aec0; --oro: #FFD700; --rojo: #ff4444; --verde: #32CD32; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--fondo); color: var(--texto); overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+        
+        /* Navbar */
+        .navbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: rgba(17, 22, 34, 0.9); border-bottom: 1px solid #1e293b; position: sticky; top: 0; backdrop-filter: blur(10px); z-index: 100; box-sizing: border-box; }
+        .logo { font-size: 1.2rem; font-weight: bold; letter-spacing: 1px; color: #fff; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .logo img { height: 35px; width: auto; border-radius: 4px; object-fit: contain; }
+        .logo span { color: var(--nexus-azul); }
+        .nav-links { display: flex; align-items: center; gap: 10px; }
+        .nav-links button { background: none; border: 1px solid var(--nexus-azul); color: #fff; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 0.8rem; white-space: nowrap; }
+        .nav-links button:hover { background: var(--nexus-azul); box-shadow: 0 0 12px rgba(0, 82, 204, 0.4); }
+        
+        /* Info de usuario */
+        .user-logged-info { font-family: monospace; color: var(--nexus-cyan); font-size: 0.8rem; background: rgba(0, 223, 162, 0.1); padding: 5px 10px; border-radius: 6px; border: 1px solid var(--nexus-cyan); display: none; align-items: center; gap: 8px; }
+
+        /* Contenedor Principal Buscador */
+        .search-hero { max-width: 1000px; margin: 20px auto; padding: 0 20px; box-sizing: border-box; }
+        .search-box { background: linear-gradient(135deg, #111622 0%, #0c101a 100%); border: 1px solid #1e293b; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 15px; }
+
+        /* Lista de Pasajes Disponibles */
+        .results-container { max-width: 1000px; margin: 20px auto; padding: 0 20px; box-sizing: border-box; }
+        .ticket-card { background: var(--panel); border: 1px solid #1e293b; border-radius: 10px; padding: 15px; margin-bottom: 12px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; gap: 15px; transition: 0.2s; }
+        @media(min-width: 768px){ .ticket-card { flex-direction: row; align-items: center; } }
+        .ticket-card:hover { border-color: var(--nexus-azul); }
+        .ticket-info { display: flex; flex-direction: column; gap: 4px; }
+        .ticket-route { font-size: 1.2rem; font-weight: bold; color: #fff; }
+        .ticket-empresa { font-size: 0.85rem; color: var(--nexus-cyan); font-weight: 600; text-transform: uppercase; }
+        .ticket-meta { font-size: 0.8rem; color: var(--gris-texto); }
+        .ticket-price-zone { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; }
+        @media(min-width: 768px){ .ticket-price-zone { align-items: flex-end; width: auto; } }
+        .ticket-price { font-size: 1.4rem; font-weight: bold; color: var(--oro); font-family: monospace; }
+
+        /* Estilos de Formulario */
+        input, select, textarea { width: 100%; padding: 10px; margin: 4px 0; border-radius: 6px; background: #0b0f19; color: #fff; border: 1px solid #1e293b; box-sizing: border-box; outline: none; font-family: inherit; font-size: 0.85rem; }
+        input:focus, select:focus, textarea:focus { border-color: var(--nexus-azul); }
+        label { font-size: 0.75rem; color: var(--gris-texto); font-weight: 600; text-transform: uppercase; }
+        .btn-nexus { background: var(--nexus-azul); color: #fff; border: none; padding: 12px; width: 100%; font-weight: bold; cursor: pointer; text-transform: uppercase; border-radius: 6px; transition: 0.3s; text-align: center; font-size: 0.85rem; }
+        .btn-nexus:hover { background: #0041a3; }
+
+        /* Modales */
+        .nexus-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 60000; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px); }
+        .modal-box { background: var(--panel); border: 1px solid #1e293b; padding: 20px; border-radius: 10px; width: 100%; max-width: 340px; box-shadow: 0 10px 25px rgba(0,0,0,0.7); box-sizing: border-box; }
+
+        /* Panel Administrativo */
+        #admin-portal { display: none; position: fixed; inset: 0; background: #07090e; z-index: 50000; padding: 20px; overflow-y: auto; box-sizing: border-box; }
+        .admin-grid { display: grid; grid-template-columns: 1fr; gap: 15px; max-width: 1000px; margin: 15px auto; }
+        @media(min-width: 768px){ .admin-grid { grid-template-columns: 1fr 1fr; } }
+        .admin-section-box { background: var(--panel); border: 1px solid #1e293b; padding: 15px; border-radius: 10px; box-sizing: border-box; }
+
+        .section-title { font-size: 1rem; font-weight: bold; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 1px; }
+        .section-title::after { content: ''; flex-grow: 1; height: 1px; background: #1e293b; }
+    </style>
+</head>
+<body onload="conectarPlataforma()">
+
+    <div class="navbar">
+        <div class="nav-links">
+            <button onclick="entrarModoAdmin()" style="border-color: var(--oro); color: var(--oro);">⚙️ PANEL TRANSPORTN</button>
+        </div>
+
+        <div class="logo" onclick="location.reload()">
+            <img src="https://i.postimg.cc/hPKjZS80/1779085750603.png" alt="Transportes Nexus Logo">
+            Transport<span>N</span>
+        </div>
+        
+        <div class="nav-links">
+            <div id="nexus-auth-container" style="display: flex; gap: 8px;">
+                <button onclick="abrirModalAuth('login')">Log In</button>
+                <button onclick="abrirModalAuth('registro')" style="background: var(--nexus-azul);">Crear Cuenta</button>
+            </div>
+            <div id="nexus-user-info" class="user-logged-info">
+                <span id="user-display-email">---</span>
+                <span id="user-display-balance" style="color:var(--oro); font-weight:bold;">$0.00 UQT</span>
+                <button onclick="cerrarSesionNexus()" style="background: var(--rojo); border:none; padding: 3px 6px; font-size:0.7rem; border-radius:4px; color:white;">Salir</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="search-hero">
+        <div class="search-box">
+            <div class="section-title" style="color: var(--nexus-cyan); margin-top:0;">🔍 Buscador Global de Pasajes Terrestres</div>
+            <div class="search-grid">
+                <div>
+                    <label>Origen</label>
+                    <input type="text" id="search-origen" placeholder="Ej: Retiro, Buenos Aires">
+                </div>
+                <div>
+                    <label>Destino</label>
+                    <input type="text" id="search-destino" placeholder="Ej: San Miguel">
+                </div>
+                <div>
+                    <label>Fecha de Viaje</label>
+                    <input type="date" id="search-fecha">
+                </div>
+                <div>
+                    <label>Filtrar por Empresa de TikTok</label>
+                    <select id="search-empresa">
+                        <option value="">Todas las empresas</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn-nexus" style="background: var(--nexus-cyan); color:#000;" onclick="filtrarPasajes()">Buscar Servicios Disponibles</button>
+        </div>
+    </div>
+
+    <div class="results-container">
+        <div class="section-title">🚍 Cronogramas y Boletos Encontrados</div>
+        <div id="contenedor-pasajes">
+            <p style="color: var(--gris-texto); font-size: 0.9rem; text-align: center;">Cargando grilla unificada de transporte corporativo...</p>
+        </div>
+    </div>
+
+    <div id="modal-auth" class="nexus-modal">
+        <div class="modal-box">
+            <h3 id="auth-title" style="margin-top: 0; border-bottom: 1px solid #1e293b; padding-bottom: 8px; color: var(--nexus-cyan); font-size: 1.1rem;">Log In Nexus</h3>
+            <label>Correo de Red Nexus:</label>
+            <input type="email" id="auth-email" placeholder="usuario@nexus.com">
+            <label>Contraseña:</label>
+            <input type="password" id="auth-pass" placeholder="••••••••">
+            <div id="auth-action-btn-container" style="margin-top: 12px;"></div>
+            <button class="btn-nexus" style="background: #333; margin-top: 8px; padding: 8px; font-size: 0.75rem;" onclick="cerrarModalAuth()">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="admin-portal">
+        <div style="display:flex; justify-content:space-between; align-items: center; border-bottom:1px solid #1e293b; padding-bottom:10px;">
+            <h3 style="color: var(--oro); margin: 0; font-family: monospace; font-size: 1.2rem;">🎛️ PORTAL DE CARGA TRANSPORTN // AFILIADOS TIKTOK</h3>
+            <button onclick="document.getElementById('admin-portal').style.display='none'" style="background: var(--rojo); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">CERRAR PANEL</button>
+        </div>
+
+        <div class="admin-grid">
+            <div class="admin-section-box">
+                <div class="section-title" style="color:var(--nexus-cyan);">📈 Afiliar Nueva Empresa (TikTok Hub)</div>
+                <label>Nombre Comercial de la Empresa:</label>
+                <input type="text" id="adm-empresa-nombre" placeholder="Ej: Transportes El Tiktoker">
+                <label>Usuario de TikTok de la Empresa (Opcional):</label>
+                <input type="text" id="adm-empresa-tiktok" placeholder="@empresa_viajes">
+                <button class="btn-nexus" style="margin-top:10px;" onclick="registrarEmpresaTikTok()">Dar de Alta en Red</button>
+            </div>
+
+            <div class="admin-section-box">
+                <div class="section-title" style="color:var(--nexus-cyan);">🗺️ Programar Viaje / Tramo Comercial</div>
+                <label>Seleccionar Empresa Operadora:</label>
+                <select id="adm-viaje-empresa"></select>
+                
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1;">
+                        <label>Origen:</label>
+                        <input type="text" id="adm-viaje-origen" placeholder="Retiro">
+                    </div>
+                    <div style="flex:1;">
+                        <label>Destino:</label>
+                        <input type="text" id="adm-viaje-destino" placeholder="Mar del Plata">
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1;">
+                        <label>Fecha:</label>
+                        <input type="date" id="adm-viaje-fecha">
+                    </div>
+                    <div style="flex:1;">
+                        <label>Hora de Salida:</label>
+                        <input type="time" id="adm-viaje-hora">
+                    </div>
+                </div>
+
+                <label>Precio del Boleto ($ UQT / BancoGato):</label>
+                <input type="number" id="adm-viaje-precio" placeholder="2500">
+
+                <button class="btn-nexus" style="background:var(--verde); color:#000; margin-top:10px;" onclick="publicarViaje()">Habilitar Venta de Pasaje</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuración centralizada de tu ecosistema Firebase
+        const firebaseConfig = { apiKey: "AIzaSyA58MXpItx1F9zNnJbyeS_4FT_onYx9wig", authDomain: "uqt-virtual.firebaseapp.com", projectId: "uqt-virtual", storageBucket: "uqt-virtual.appspot.com", messagingSenderId: "777641217730", appId: "1:777641217730:web:8c5b5f9b4c7d8e2a" };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let usuarioActualEmail = null;
+
+        function conectarPlataforma() {
+            // Monitorear Autenticación Global Nexus
+            auth.onAuthStateChanged(user => {
+                const guestContainer = document.getElementById('nexus-auth-container');
+                const userContainer = document.getElementById('nexus-user-info');
+                if(user) {
+                    usuarioActualEmail = user.email;
+                    guestContainer.style.display = 'none';
+                    userContainer.style.display = 'flex';
+                    document.getElementById('user-display-email').innerText = user.email.split('@')[0].toUpperCase();
+                    
+                    // Escuchar saldo en tiempo real desde base central de usuarios
+                    db.collection('usuarios').doc(user.email).onSnapshot(doc => {
+                        if(doc.exists) {
+                            const saldo = doc.data().saldo_uqt || 0;
+                            document.getElementById('user-display-balance').innerText = `$${saldo.toLocaleString()} UQT`;
+                        }
+                    });
+                } else {
+                    usuarioActualEmail = null;
+                    guestContainer.style.display = 'flex';
+                    userContainer.style.display = 'none';
+                }
+            });
+
+            // Sincronizar selectores de Empresas de TikTok en vivo
+            db.collection('transportn_empresas').orderBy('nombre', 'asc').onSnapshot(snap => {
+                const searchSelect = document.getElementById('search-empresa');
+                const adminSelect = document.getElementById('adm-viaje-empresa');
+                
+                let options = '<option value="">Todas las empresas</option>';
+                let adminOptions = '';
+
+                snap.forEach(doc => {
+                    const emp = doc.data();
+                    options += `<option value="${emp.nombre}">${emp.nombre} ${emp.tiktok ? '('+emp.tiktok+')' : ''}</option>`;
+                    adminOptions += `<option value="${emp.nombre}">${emp.nombre}</option>`;
+                });
+
+                searchSelect.innerHTML = options;
+                adminSelect.innerHTML = adminOptions;
+            });
+
+            // Cargar grilla completa de viajes inicialmente
+            cargarViajesGubernamentales({}, (viajes) => { renderizarPasajesGrid(viajes); });
+        }
+
+        function cargarViajesGubernamentales(filtros, callback) {
+            let query = db.collection('transportn_viajes');
+            query.onSnapshot(snap => {
+                let lista = [];
+                snap.forEach(doc => {
+                    let data = doc.data();
+                    data.id = doc.id;
+                    lista.push(data);
+                });
+                callback(lista);
+            });
+        }
+
+        function renderizarPasajesGrid(viajes) {
+            const contenedor = document.getElementById('contenedor-pasajes');
+            if(viajes.length === 0) {
+                contenedor.innerHTML = `<p style="color: var(--gris-texto); text-align: center; font-size:0.9rem;">No hay pasajes disponibles para los criterios seleccionados.</p>`;
+                return;
+            }
+
+            contenedor.innerHTML = viajes.map(v => {
+                return `
+                    <div class="ticket-card">
+                        <div class="ticket-info">
+                            <div class="ticket-empresa">🚍 ${v.empresa}</div>
+                            <div class="ticket-route">${v.origen} → ${v.destino}</div>
+                            <div class="ticket-meta">📅 Fecha: <b>${v.fecha}</b> | 🕒 Salida: <b>${v.hora} hs</b></div>
+                        </div>
+                        <div class="ticket-price-zone">
+                            <div class="ticket-price">$${v.precio} UQT</div>
+                            <button class="btn-nexus" style="padding: 6px 15px; font-size:0.75rem;" onclick="procesarCompraBoleto('${v.id}', ${v.precio}, '${v.origen}', '${v.destino}', '${v.empresa}')">Comprar Boleto</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function filtrarPasajes() {
+            const ori = document.getElementById('search-origen').value.trim().toLowerCase();
+            const dest = document.getElementById('search-destino').value.trim().toLowerCase();
+            const fecha = document.getElementById('search-fecha').value;
+            const emp = document.getElementById('search-empresa').value;
+
+            db.collection('transportn_viajes').get().then(snap => {
+                let filtrados = [];
+                snap.forEach(doc => {
+                    const v = doc.data();
+                    v.id = doc.id;
+
+                    if(ori && !v.origen.toLowerCase().includes(ori)) return;
+                    if(dest && !v.destino.toLowerCase().includes(dest)) return;
+                    if(fecha && v.fecha !== fecha) return;
+                    if(emp && v.empresa !== emp) return;
+
+                    filtrados.push(v);
+                });
+                renderizarPasajesGrid(filtrados);
+            });
+        }
+
+        async function procesarCompraBoleto(viajeId, precio, origen, destino, empresa) {
+            if(!usuarioActualEmail) {
+                return alert("Para adquirir pasajes debes iniciar sesión con tu Cuenta Nexus Global.");
+            }
+
+            if(!confirm(`¿Confirmas la compra del boleto con la empresa ${empresa} por $${precio} UQT?`)) return;
+
+            const userRef = db.collection('usuarios').doc(usuarioActualEmail);
+
+            try {
+                await db.runTransaction(async (transaction) => {
+                    const userDoc = await transaction.get(userRef);
+                    if(!userDoc.exists) throw "El usuario de red no posee una cuenta activa.";
+
+                    const saldoActual = userDoc.data().saldo_uqt || 0;
+                    if(saldoActual < precio) {
+                        throw "Fondos insuficientes en tu Cuenta Nexus. Realiza una recarga en BancoGato.";
+                    }
+
+                    transaction.update(userRef, { saldo_uqt: saldoActual - precio });
+
+                    const boletoRef = db.collection('usuarios_boletos').doc();
+                    transaction.set(boletoRef, {
+                        usuario: usuarioActualEmail,
+                        viajeId: viajeId,
+                        origen: origen,
+                        destino: destino,
+                        empresa: empresa,
+                        precioPagado: precio,
+                        fechaCompra: firebase.firestore.FieldValue.serverTimestamp(),
+                        estado: "VALIDADO EN TERMINAL"
+                    });
+                });
+
+                alert("¡Pasaje adquirido con éxito! Se ha verificado en red central.");
+
+            } catch (err) {
+                alert("Operación cancelada: " + err);
+            }
+        }
+
+        function registrarEmpresaTikTok() {
+            const nombre = document.getElementById('adm-empresa-nombre').value.trim();
+            const tiktok = document.getElementById('adm-empresa-tiktok').value.trim();
+
+            if(!nombre) return alert("Ingrese el nombre de la empresa.");
+
+            db.collection('transportn_empresas').add({ nombre, tiktok })
+                .then(() => {
+                    alert(`¡Empresa "${nombre}" afiliada exitosamente!`);
+                    document.getElementById('adm-empresa-nombre').value = "";
+                    document.getElementById('adm-empresa-tiktok').value = "";
+                });
+        }
+
+        function publicarViaje() {
+            const empresa = document.getElementById('adm-viaje-empresa').value;
+            const origen = document.getElementById('adm-viaje-origen').value.trim();
+            const destino = document.getElementById('adm-viaje-destino').value.trim();
+            const fecha = document.getElementById('adm-viaje-fecha').value;
+            const hora = document.getElementById('adm-viaje-hora').value;
+            const precio = parseFloat(document.getElementById('adm-viaje-precio').value);
+
+            if(!empresa || !origen || !destino || !fecha || !hora || isNaN(precio)) {
+                return alert("Complete todos los campos del tramo de viaje.");
+            }
+
+            db.collection('transportn_viajes').add({ empresa, origen, destino, fecha, hora, precio })
+                .then(() => {
+                    alert("¡Ruta e itinerario publicados para la venta masiva!");
+                    document.getElementById('adm-viaje-origen').value = "";
+                    document.getElementById('adm-viaje-destino').value = "";
+                    document.getElementById('adm-viaje-precio').value = "";
+                });
+        }
+
+        function abrirModalAuth(modo) {
+            const modal = document.getElementById('modal-auth');
+            const titulo = document.getElementById('auth-title');
+            const btnContainer = document.getElementById('auth-action-btn-container');
+            modal.style.display = 'flex';
+            if(modo === 'login') {
+                titulo.innerText = "🔐 Log In Nexus Account";
+                btnContainer.innerHTML = `<button class="btn-nexus" onclick="ejecutarLogin()">Acceder al Sistema</button>`;
+            } else {
+                titulo.innerText = "🚀 Crear Cuenta Nexus Global";
+                btnContainer.innerHTML = `<button class="btn-nexus" style="background:var(--nexus-cyan); color:#000;" onclick="ejecutarRegistro()">Registrar Nueva Cuenta</button>`;
+            }
+        }
+        function cerrarModalAuth() { document.getElementById('modal-auth').style.display = 'none'; }
+
+        function ejecutarLogin() {
+            const email = document.getElementById('auth-email').value.trim();
+            const pass = document.getElementById('auth-pass').value;
+            if(!email || !pass) return alert("Complete los datos.");
+            auth.signInWithEmailAndPassword(email, pass).then(() => { alert("Sesión iniciada."); cerrarModalAuth(); }).catch(err => alert("Error: " + err.message));
+        }
+
+        function ejecutarRegistro() {
+            const email = document.getElementById('auth-email').value.trim();
+            const pass = document.getElementById('auth-pass').value;
+            if(!email || !pass) return alert("Complete los datos.");
+            auth.createUserWithEmailAndPassword(email, pass).then(async () => {
+                await db.collection('usuarios').doc(email).set({ email: email, saldo_uqt: 0, plan: "", fechaCreacion: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                alert("Cuenta Nexus creada globalmente.");
+                cerrarModalAuth();
+            }).catch(err => alert("Error: " + err.message));
+        }
+
+        function cerrarSesionNexus() { auth.signOut(); }
+
+        // Acceso Especial Administrador con la clave solicitada
+        function entrarModoAdmin() {
+            const password = prompt("Código de Seguridad Comercial TransportN:");
+            if(password === "UnionQuintanaTuri2012@_") {
+                document.getElementById('admin-portal').style.display = 'block';
+            } else {
+                alert("Acceso denegado. Credenciales inválidas.");
+            }
+        }
+    </script>
+</body>
+</html>
