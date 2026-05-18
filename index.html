@@ -169,15 +169,21 @@
             </div>
 
             <div class="admin-section-box">
-                <div class="section-title" style="color:var(--nexus-cyan);">🏙️ Registrar Lista de Ciudades y Paradas</div>
+                <div class="section-title" style="color:var(--nexus-cyan);">🏙️ Registrar Ciudades y Terminales</div>
                 <label>Nombre de la Ciudad:</label>
                 <input type="text" id="adm-parada-ciudad" placeholder="Ej: Brookhaven, Bloxburg, Retiro">
-                <label>Nombre de la Parada / Terminal Específica:</label>
-                <input type="text" id="adm-parada-nombre" placeholder="Ej: Terminal Central, Estación Norte">
                 <button class="btn-nexus" style="background: var(--nexus-azul); margin-top:10px;" onclick="registrarCiudadParada()">Guardar Ubicación Oficial</button>
             </div>
 
             <div class="admin-section-box">
+                <div class="section-title" style="color:var(--rojo);">🗑️ Borrar Parada / Terminal</div>
+                <p style="font-size:0.75rem; color:var(--gris-texto); margin: 0 0 10px 0;">Remueve terminales mal configuradas o duplicadas del servidor:</p>
+                <div class="admin-list-container" id="admin-lista-borrar-paradas">
+                    <p style="color:var(--gris-texto); font-size:0.75rem; padding:10px;">Cargando terminales...</p>
+                </div>
+            </div>
+
+            <div class="admin-section-box" style="grid-column: 1 / -1;">
                 <div class="section-title" style="color:var(--nexus-cyan);">🗺️ Programar Viaje / Tramo Comercial</div>
                 <label>Seleccionar Empresa Operadora:</label>
                 <select id="adm-viaje-empresa"></select>
@@ -290,21 +296,37 @@
                 adminSelect.innerHTML = adminOptions;
             });
 
-            // ESCUCHA ACTIVA DE CIUDADES Y PARADAS
+            // ESCUCHA ACTIVA DE CIUDADES Y PARADAS (Módulo Borrar Parada Integrado)
             db.collection('transportn_paradas').orderBy('ciudad', 'asc').onSnapshot(snap => {
                 const sOrigen = document.getElementById('search-origen');
                 const sDestino = document.getElementById('search-destino');
                 const aOrigen = document.getElementById('adm-viaje-origen');
                 const aDestino = document.getElementById('adm-viaje-destino');
+                const panelBorrarParada = document.getElementById('admin-lista-borrar-paradas');
 
                 let searchOptions = '<option value="">-- Seleccionar Terminal --</option>';
                 let adminOptions = '';
 
+                if(snap.empty) {
+                    panelBorrarParada.innerHTML = `<p style="color:var(--gris-texto); font-size:0.75rem; padding:10px;">No hay ubicaciones configuradas.</p>`;
+                } else {
+                    panelBorrarParada.innerHTML = "";
+                }
+
                 snap.forEach(doc => {
                     const p = doc.data();
-                    const stringCompleto = `${p.ciudad} [${p.parada}]`;
+                    const paradaId = doc.id;
+                    const stringCompleto = `La Terminal [${p.ciudad}]`;
+                    
                     searchOptions += `<option value="${stringCompleto}">${stringCompleto}</option>`;
                     adminOptions += `<option value="${stringCompleto}">${stringCompleto}</option>`;
+                    
+                    panelBorrarParada.innerHTML += `
+                        <div class="admin-list-item">
+                            <span>📍 <b>${stringCompleto}</b></span>
+                            <button class="btn-delete-mini" onclick="borrarParadaRed('${paradaId}', '${stringCompleto}')">Borrar Parada</button>
+                        </div>
+                    `;
                 });
 
                 sOrigen.innerHTML = searchOptions;
@@ -331,7 +353,7 @@
 
                     panelBorrar.innerHTML += `
                         <div class="admin-list-item">
-                            <span><b>${data.empresa}</b>: ${data.origen.split(' [')[0]} ➔ ${data.destino.split(' [')[0]} (${data.fecha} - ${data.hora}hs)</span>
+                            <span><b>${data.empresa}</b>: ${data.origen} ➔ ${data.destino} (${data.fecha} - ${data.hora}hs)</span>
                             <button class="btn-delete-mini" onclick="borrarServicioViaje('${data.id}')">Borrar Itinerario</button>
                         </div>
                     `;
@@ -424,7 +446,7 @@
 
                 await db.collection('movimientos_banco').add({
                     uid: usuarioActualUID,
-                    actividad: `Compra de Pasaje: A ${destino.split(' [')[0]}`,
+                    actividad: `Compra de Pasaje: A ${destino}`,
                     monto: precio,
                     tipo: 'salida',
                     fecha: firebase.firestore.FieldValue.serverTimestamp()
@@ -437,18 +459,20 @@
             }
         }
 
+        // ALTA DE CIUDAD CON PARSEO AUTOMÁTICO DE NOMBRE
         function registrarCiudadParada() {
-            const ciudad = document.getElementById('adm-parada-ciudad').value.trim();
-            const parada = document.getElementById('adm-parada-nombre').value.trim();
+            let ciudad = document.getElementById('adm-parada-ciudad').value.trim();
 
-            if(!ciudad || !parada) return alert("Complete los nombres de la Ciudad y su respectiva Parada.");
+            if(!ciudad) return alert("Complete el nombre de la ciudad.");
 
-            db.collection('transportn_paradas').add({ ciudad, parada })
+            // Limpieza por si ponen corchetes o el prefijo a mano para evitar duplicaciones raras
+            ciudad = ciudad.replace(/La Terminal\s*\[?/i, "").replace(/\]$/, "").trim();
+
+            db.collection('transportn_paradas').add({ ciudad: ciudad })
                 .then(() => {
-                    alert(`Ubicación guardada: ${ciudad} - ${parada}`);
+                    alert(`Ubicación guardada con éxito bajo la directiva: La Terminal [${ciudad}]`);
                     document.getElementById('adm-parada-ciudad').value = "";
-                    document.getElementById('adm-parada-nombre').value = "";
-                }).catch(e => alert("Error al guardar: " + e));
+                }).catch(e => alert("Error al guardar terminal: " + e));
         }
 
         function registrarEmpresaTikTok() {
@@ -493,12 +517,20 @@
                 .catch(err => alert("Error al borrar: " + err));
         }
 
-        // PANEL ADMIN: ELIMINAR EMPRESA (Evita el bardo)
+        // PANEL ADMIN: ELIMINAR EMPRESA
         function borrarEmpresaRed(id, nombre) {
             if(!confirm(`¿Estás completamente seguro de dar de baja a "${nombre}"? Se borrará de todos los selectores del sistema.`)) return;
             db.collection('transportn_empresas').doc(id).delete()
                 .then(() => { alert(`La empresa "${nombre}" fue expulsada de la red TransportN.`); })
                 .catch(err => alert("Error al remover la organización: " + err));
+        }
+
+        // PANEL ADMIN: ELIMINAR PARADA (Previene bugs visuales de carga)
+        function borrarParadaRed(id, nombreCompleto) {
+            if(!confirm(`¿Deseas eliminar "${nombreCompleto}" del mapa global? Esto no cancelará viajes ya creados pero impedirá publicar nuevos tramos usando esta terminal.`)) return;
+            db.collection('transportn_paradas').doc(id).delete()
+                .then(() => { alert("Terminal eliminada del servidor unificado."); })
+                .catch(err => alert("Error al remover parada: " + err));
         }
 
         // CONFIG DE AUTENTICACIÓN
