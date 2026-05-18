@@ -161,6 +161,14 @@
             </div>
 
             <div class="admin-section-box">
+                <div class="section-title" style="color:var(--rojo);">🗑️ Eliminar Empresa de la Red</div>
+                <p style="font-size:0.75rem; color:var(--gris-texto); margin: 0 0 10px 0;">Da de baja agencias problemáticas o inactivas de forma inmediata:</p>
+                <div class="admin-list-container" id="admin-lista-borrar-empresas">
+                    <p style="color:var(--gris-texto); font-size:0.75rem; padding:10px;">Cargando empresas...</p>
+                </div>
+            </div>
+
+            <div class="admin-section-box">
                 <div class="section-title" style="color:var(--nexus-cyan);">🏙️ Registrar Lista de Ciudades y Paradas</div>
                 <label>Nombre de la Ciudad:</label>
                 <input type="text" id="adm-parada-ciudad" placeholder="Ej: Brookhaven, Bloxburg, Retiro">
@@ -202,7 +210,7 @@
                 <button class="btn-nexus" style="background:var(--verde); color:#000; margin-top:10px;" onclick="publicarViaje()">Habilitar Venta de Pasaje</button>
             </div>
 
-            <div class="admin-section-box">
+            <div class="admin-section-box" style="grid-column: 1 / -1;">
                 <div class="section-title" style="color:var(--rojo);">🗑️ Borrar Servicio / Cancelar Itinerario</div>
                 <p style="font-size:0.75rem; color:var(--gris-texto); margin: 0 0 10px 0;">Remueve de forma inmediata tramos publicados de la base de datos central:</p>
                 <div class="admin-list-container" id="admin-lista-borrar-viajes">
@@ -222,7 +230,7 @@
         let usuarioActualEmail = null;
 
         function conectarPlataforma() {
-            // MONITOREO DE USUARIO SINCRO CON BANCOGATO (`usuarios_banco`)
+            // MONITOREO DE USUARIO SINCRO CON BANCOGATO
             auth.onAuthStateChanged(user => {
                 const guestContainer = document.getElementById('nexus-auth-container');
                 const userContainer = document.getElementById('nexus-user-info');
@@ -233,7 +241,6 @@
                     userContainer.style.display = 'flex';
                     document.getElementById('user-display-email').innerText = user.email.split('@')[0].toUpperCase();
                     
-                    // SOLUCIÓN AL BUG DE COMPRAS: Leer directo de usuarios_banco por ID del Auth
                     db.collection('usuarios_banco').doc(user.uid).onSnapshot(doc => {
                         if(doc.exists) {
                             const saldo = doc.data().saldo || 0;
@@ -250,22 +257,40 @@
                 }
             });
 
-            // ESCUCHA ACTIVA DE SELECTORES DE EMPRESAS
+            // ESCUCHA ACTIVA Y PANEL DE BORRADO DE EMPRESAS
             db.collection('transportn_empresas').orderBy('nombre', 'asc').onSnapshot(snap => {
                 const searchSelect = document.getElementById('search-empresa');
                 const adminSelect = document.getElementById('adm-viaje-empresa');
+                const panelBorrarEmpresa = document.getElementById('admin-lista-borrar-empresas');
+                
                 let options = '<option value="">Todas las empresas</option>';
                 let adminOptions = '';
+                
+                if(snap.empty) {
+                    panelBorrarEmpresa.innerHTML = `<p style="color:var(--gris-texto); font-size:0.75rem; padding:10px;">No hay agencias afiliadas.</p>`;
+                } else {
+                    panelBorrarEmpresa.innerHTML = "";
+                }
+
                 snap.forEach(doc => {
                     const emp = doc.data();
+                    const empId = doc.id;
+                    
                     options += `<option value="${emp.nombre}">${emp.nombre} ${emp.tiktok ? '('+emp.tiktok+')' : ''}</option>`;
                     adminOptions += `<option value="${emp.nombre}">${emp.nombre}</option>`;
+                    
+                    panelBorrarEmpresa.innerHTML += `
+                        <div class="admin-list-item">
+                            <span>🏢 <b>${emp.nombre}</b> ${emp.tiktok ? '<small style="color:var(--nexus-cyan)">'+emp.tiktok+'</small>' : ''}</span>
+                            <button class="btn-delete-mini" onclick="borrarEmpresaRed('${empId}', '${emp.nombre}')">Dar de baja</button>
+                        </div>
+                    `;
                 });
                 searchSelect.innerHTML = options;
                 adminSelect.innerHTML = adminOptions;
             });
 
-            // ESCUCHA ACTIVA DE CIUDADES Y PARADAS (Evita nombres aleatorios)
+            // ESCUCHA ACTIVA DE CIUDADES Y PARADAS
             db.collection('transportn_paradas').orderBy('ciudad', 'asc').onSnapshot(snap => {
                 const sOrigen = document.getElementById('search-origen');
                 const sDestino = document.getElementById('search-destino');
@@ -304,11 +329,10 @@
                     data.id = doc.id;
                     listaViajes.push(data);
 
-                    // Insertar en la lista del módulo Borrar Servicio del panel admin
                     panelBorrar.innerHTML += `
                         <div class="admin-list-item">
-                            <span><b>${data.empresa}</b>: ${data.origen.split(' [')[0]} ➔ ${data.destino.split(' [')[0]} (${data.fecha})</span>
-                            <button class="btn-delete-mini" onclick="borrarServicioViaje('${data.id}')">Borrar</button>
+                            <span><b>${data.empresa}</b>: ${data.origen.split(' [')[0]} ➔ ${data.destino.split(' [')[0]} (${data.fecha} - ${data.hora}hs)</span>
+                            <button class="btn-delete-mini" onclick="borrarServicioViaje('${data.id}')">Borrar Itinerario</button>
                         </div>
                     `;
                 });
@@ -363,7 +387,6 @@
             });
         }
 
-        // CONTROL DE COMPRAS CORREGIDO BAJO BANCOGATO
         async function procesarCompraBoleto(viajeId, precio, origen, destino, empresa) {
             if(!usuarioActualUID) {
                 return alert("Para adquirir pasajes debes iniciar sesión con tu Cuenta Nexus Global.");
@@ -383,10 +406,8 @@
                         throw "Fondos insuficientes en tu Cuenta Nexus. Realiza una inyección en BancoGato.";
                     }
 
-                    // Descontar saldo con la variable unificada
                     transaction.update(userRef, { saldo: saldoActual - precio });
 
-                    // Registrar boleto emitido
                     const boletoRef = db.collection('usuarios_boletos').doc();
                     transaction.set(boletoRef, {
                         uid: usuarioActualUID,
@@ -401,7 +422,6 @@
                     });
                 });
 
-                // Registrar el movimiento de salida para que se vea en el Historial de BancoGato
                 await db.collection('movimientos_banco').add({
                     uid: usuarioActualUID,
                     actividad: `Compra de Pasaje: A ${destino.split(' [')[0]}`,
@@ -417,7 +437,6 @@
             }
         }
 
-        // PANEL ADMIN: ALTA CIUDAD Y PARADA
         function registrarCiudadParada() {
             const ciudad = document.getElementById('adm-parada-ciudad').value.trim();
             const parada = document.getElementById('adm-parada-nombre').value.trim();
@@ -466,13 +485,20 @@
                 });
         }
 
-        // PANEL ADMIN: ELIMINAR SERVICIOS
+        // PANEL ADMIN: ELIMINAR ITINERARIO
         function borrarServicioViaje(id) {
             if(!confirm("¿Estás seguro de que deseas eliminar permanentemente este servicio de transporte?")) return;
             db.collection('transportn_viajes').doc(id).delete()
-                .then(() => {
-                    alert("Servicio removido del servidor global de manera exitosa.");
-                }).catch(err => alert("Error al borrar: " + err));
+                .then(() => { alert("Servicio removido del servidor global."); })
+                .catch(err => alert("Error al borrar: " + err));
+        }
+
+        // PANEL ADMIN: ELIMINAR EMPRESA (Evita el bardo)
+        function borrarEmpresaRed(id, nombre) {
+            if(!confirm(`¿Estás completamente seguro de dar de baja a "${nombre}"? Se borrará de todos los selectores del sistema.`)) return;
+            db.collection('transportn_empresas').doc(id).delete()
+                .then(() => { alert(`La empresa "${nombre}" fue expulsada de la red TransportN.`); })
+                .catch(err => alert("Error al remover la organización: " + err));
         }
 
         // CONFIG DE AUTENTICACIÓN
@@ -503,13 +529,8 @@
             const pass = document.getElementById('auth-pass').value;
             if(!email || !pass) return alert("Complete los datos.");
             auth.createUserWithEmailAndPassword(email, pass).then(async (res) => {
-                // Sincronizar directo con esquema BancoGato
                 await db.collection('usuarios_banco').doc(res.user.uid).set({ 
-                    nombre: "Usuario", 
-                    apellido: "Nexus", 
-                    alias: email.split('@')[0], 
-                    email: email, 
-                    saldo: 0, 
+                    nombre: "Usuario", apellido: "Nexus", alias: email.split('@')[0], email: email, saldo: 0, 
                     cardNum: "7777 " + Math.floor(1000+Math.random()*8999) + " " + Math.floor(1000+Math.random()*8999) + " " + Math.floor(1000+Math.random()*8999), 
                     cvv: Math.floor(100 + Math.random()*899)
                 }, { merge: true });
